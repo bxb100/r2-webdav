@@ -702,13 +702,34 @@ const SUPPORT_METHODS = ['OPTIONS', 'PROPFIND', 'PROPPATCH', 'MKCOL', 'GET', 'HE
 async function dispatch_handler(request: Request, bucket: R2Bucket): Promise<Response> {
 	switch (request.method) {
 		case 'OPTIONS': {
-			return new Response(null, {
-				status: 204,
-				headers: {
-					Allow: SUPPORT_METHODS.join(', '),
-					DAV: DAV_CLASS,
-				},
-			});
+			// https://github.com/messense/dav-server-rs/blob/084b56b093337ed538587b0fb0afeef6f456b525/src/handle_options.rs#L9
+			let resource_path = make_resource_path(request);
+			let resource = await bucket.head(resource_path);
+			if (resource == null && resource_path !== '*') {
+				return new Response(null, {
+					status: 200,
+					headers: {
+						Allow: ["OPTIONS", "MKCOL", "PUT"].join(', '),
+						DAV: DAV_CLASS,
+					},
+				})
+			} else {
+				let allowed = [];
+				if (resource?.customMetadata?.resourcetype == undefined || resource_path === '*') {
+					allowed.push('HEAD', 'GET', 'PUT');
+				}
+				allowed.push('OPTIONS', 'PROPFIND', 'PROPPATCH', 'COPY');
+				if (resource_path !== '/') {
+					allowed.push('MOVE', 'DELETE');
+				}
+				return new Response(null, {
+					status: 200,
+					headers: {
+						Allow: allowed.join(', '),
+						DAV: DAV_CLASS,
+					},
+				});
+			}
 		}
 		case 'HEAD': {
 			return await handle_head(request, bucket);
